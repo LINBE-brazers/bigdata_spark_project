@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<main>
+    <description>会员经理业绩分析</description>
+    <mode>append</mode>
+
+    <demo>
+        select * from dual;
+    </demo>
+
+</main>

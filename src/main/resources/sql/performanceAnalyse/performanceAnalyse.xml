@@ -1,0 +1,1112 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<main>
+    <description>会员经理业绩分析</description>
+    <mode>append</mode>
+
+    <!--缓存v_organization表-->
+    <v_organization_cache>
+        cache table v_organization_cache as
+        select
+        b.name as name1,
+        a.name as name2,
+        a.parent_id,
+        a.id
+        from member_database.v_organization a
+        left join member_database.v_organization b on b.id = a.parent_id
+        where a.parent_id &lt;&gt; '0'
+    </v_organization_cache>
+
+    <!--缓存broker_member_level会员等级表-->
+    <broker_member_level_cache>
+        cache table broker_member_level_cache as
+        select * from hft.ods_hft_sqlserver_broker_member_level
+    </broker_member_level_cache>
+
+    <!--缓存会员经理与会员关系表-->
+    <bi_kh_manager_cache>
+        cache table bi_kh_manager_cache as
+        select * from hft.ods_hft_sqlserver_bi_kh_manager
+    </bi_kh_manager_cache>
+
+    <!--缓存会员经理组织架构表-->
+    <bi_kh_employee_cache>
+        cache table bi_kh_employee_cache as
+        select * from hft.ods_hft_sqlserver_bi_kh_employee
+    </bi_kh_employee_cache>
+
+    <!--经纪人信息认证表，缓存到磁盘-->
+    <broker_approve_select>
+        select
+        broker_id,
+        idcard_num,
+        approve_state,
+        apply_time
+        from hft.ods_hft_sqlserver_broker_approve
+    </broker_approve_select>
+
+    <!--经纪人信息表，缓存到磁盘-->
+    <broker_select>
+        select
+        id,
+        m_phone,
+        screen_name,
+        recommender_id,
+        broker_type,
+        create_time,
+        m_qq
+        from hft.ods_hft_sqlserver_broker
+    </broker_select>
+
+
+    <!--缓存broker与broker_approve关联表-->
+    <broker_join_approve_cache>
+        cache table broker_join_approve_cache as
+        select
+        a.id,
+        a.m_phone,
+        a.screen_name,
+        a.recommender_id,
+        <!--a.broker_type,-->
+        <!--a.create_time,-->
+        a.m_qq,
+        b.broker_id,
+        <!--b.approve_state,-->
+        <!--b.apply_time,-->
+        b.idcard_num
+        from broker_cache a
+        inner join broker_approve_cache b on a.id = b.broker_id
+        and a.broker_type = '0' and b.approve_state = '2'
+        where unix_timestamp(a.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        and unix_timestamp(b.apply_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+    </broker_join_approve_cache>
+
+    <!--会员经理统计中间宽表-->
+    <dm_yx_basic_temp_manager_member>
+        <!--create table if not exists hft.dm_yx_basic_temp_manager_member_spark as-->
+        cache table dm_yx_basic_temp_manager_member_cache as
+
+        select
+        b.`地区公司`,
+        b.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        b.sap,
+        a.`会员经理手机号码`,
+        upper(a.`会员经理身份证号`) AS `会员经理身份证号`,
+        a.`会员经理broker_id`,
+        a.`会员经理发展的会员姓名`,
+        a.`会员经理发展的会员手机号码`,
+        a.`会员broker_id`,
+        a.`会员经理发展的会员姓名` AS `合伙人姓名`,
+        a.`会员broker_id` AS higher_broker_id,
+        a.`是否新发展`,
+        "0" AS `是否合伙人`,
+        "1" AS `来源`,
+        count(1) as cnt
+        from bi_kh_manager_cache a
+        left join bi_kh_employee_cache b on upper(a.`会员经理身份证号`) = upper(b.`会员经理身份证号`)
+        where b.`会员经理所属部门` is not null
+        and a.`会员经理broker_id` &lt;&gt; a.`会员broker_id`
+        and a.`会员经理手机号码` &lt;&gt; a.`会员经理发展的会员手机号码`
+        group by b.`地区公司`,
+        b.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理手机号码`,
+        upper(a.`会员经理身份证号`),
+        a.`会员经理手机号码`,
+        a.`会员经理broker_id`,
+        a.`会员经理发展的会员姓名`,
+        a.`会员经理发展的会员手机号码`,
+        a.`会员broker_id`,
+        a.`是否新发展`,
+        b.sap
+
+        union all
+
+        select
+        b.`地区公司`,
+        b.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        b.sap,
+        a.`会员经理手机号码`,
+        upper(a.`会员经理身份证号`) AS `会员经理身份证号`,
+        a.`会员经理broker_id` ,
+        a.`会员经理姓名` AS `会员经理发展的会员姓名`,
+        a.`会员经理手机号码` AS `会员经理发展的会员手机号码`,
+        a.`会员经理broker_id` AS `会员broker_id`,
+        a.`会员经理姓名` AS `合伙人姓名`,
+        a.`会员经理broker_id` AS higher_broker_id,
+        "-1" AS `是否新发展`,
+        "0" AS `是否合伙人`,
+        "2" AS `来源`,
+        count(1) AS cnt
+        from bi_kh_manager_cache a
+        left join bi_kh_employee_cache b on upper(a.`会员经理身份证号`) = upper(b.`会员经理身份证号`)
+        where b.`会员经理所属部门` is not null
+        group by b.`地区公司`,
+        b.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        b.sap,
+        a.`会员经理手机号码`,
+        upper(a.`会员经理身份证号`),
+        a.`会员经理broker_id`
+
+        union all
+
+        select
+        b.`地区公司`,
+        b.`会员经理所属部门`,
+        b.`姓名` AS `会员经理姓名`,
+        b.sap,
+        bb.m_phone AS `会员经理手机号码`,
+        upper(b.`会员经理身份证号`) AS `会员经理身份证号`,
+        bb.id AS `会员经理broker_id`,
+        b.`姓名` AS `会员经理发展的会员姓名`,
+        bb.m_phone AS `会员经理发展的会员手机号码`,
+        bb.id AS `会员broker_id`,
+        b.`姓名` AS `合伙人姓名`,
+        bb.id AS higher_broker_id,
+        "-1" AS `是否新发展`,
+        "0" AS `是否合伙人`,
+        "3" AS `来源`,
+        count(1) AS cnt
+        from bi_kh_employee_cache b
+        inner join broker_approve_cache ba on upper(ba.idcard_num)=upper(b.`会员经理身份证号`)
+        inner join broker_cache bb on bb.id = ba.broker_id
+        where upper(b.`会员经理身份证号`) not in
+        (select upper(`会员经理身份证号`) as `会员经理身份证号`
+        from bi_kh_manager_cache)
+        group by b.`地区公司`,
+        b.`会员经理所属部门`,
+        b.`姓名`,
+        b.sap,
+        bb.m_phone,
+        upper(b.`会员经理身份证号`),
+        bb.id
+
+        union all
+
+        select
+        b.`地区公司`,
+        b.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        b.sap,
+        a.`会员经理手机号码`,
+        a.`会员经理身份证号`,
+        a.`会员经理broker_id`,
+        d.screen_name AS `会员经理发展的会员姓名`,
+        d.m_phone `会员经理发展的会员手机号码`,
+        d.id AS `会员broker_id`,
+        a.`会员经理发展的会员姓名` AS `合伙人姓名`,
+        lev.higher_broker_id,
+        a.`是否新发展`,
+        "1" AS `是否合伙人`,
+        "4" AS `来源`,
+        count(1) AS cnt
+        from bi_kh_manager_cache a
+        left join bi_kh_employee_cache b on a.`会员经理身份证号` = b.`会员经理身份证号`
+        inner join broker_member_level_cache lev on a.`会员broker_id` = lev.higher_broker_id
+        inner join broker_cache d on lev.broker_id = d.id
+        where b.`会员经理所属部门` is not null
+        GROUP BY b.`地区公司`,
+        b.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        b.sap,
+        a.`会员经理手机号码`,
+        a.`会员经理身份证号`,
+        `会员经理broker_id`,
+        d.screen_name,
+        d.m_phone,
+        d.id,
+        a.`会员经理发展的会员姓名`,
+        lev.higher_broker_id,
+        a.`是否新发展`
+    </dm_yx_basic_temp_manager_member>
+
+    <!--缓存会员经理中间宽带与organization关联表-->
+    <manager_member_join_org_cache>
+        cache table manager_member_join_org_cache as
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.sap,
+        a.`会员经理手机号码`,
+        upper(a.`会员经理身份证号`) AS `会员经理身份证号`,
+        a.`会员经理broker_id`,
+        a.`会员经理发展的会员姓名`,
+        a.`会员经理发展的会员手机号码`,
+        a.`会员broker_id`,
+        a.`会员经理发展的会员姓名` AS `合伙人姓名`,
+        a.`会员broker_id` AS higher_broker_id,
+        a.`是否新发展`,
+        a.`是否合伙人`,
+        a.`来源`,
+        a.cnt,
+        ot.parent_id,
+        ot.id
+        from dm_yx_basic_temp_manager_member_cache a
+        left join v_organization_cache ot
+        on a.`地区公司` = ot.name1
+        and replace(a.`会员经理所属部门`, '管理', '') = ot.name2
+    </manager_member_join_org_cache>
+
+    <!--部门业绩报表01-->
+    <dw_depart_achievem_rep01>
+        create table if not exists hft.dw_depart_achievem_rep01_spark as
+        select
+        temp1.parent_id,
+        temp1.id,
+        temp1.member_manager_num,
+        nvl(temp2.member_num, 0) AS member_num,
+        nvl(temp3.new_member_num, 0) AS new_member_num
+        from (
+        <!--会员经理数-->
+        select
+        ot.parent_id,
+        ot.id,
+        count(distinct bke.sap) as member_manager_num
+        from bi_kh_employee_cache bke
+        left join v_organization_cache ot on bke.`地区公司` = ot.name1
+        and replace(trim(bke.`会员经理所属部门`), '管理', '') = ot.name2
+        group by ot.parent_id, ot.id) temp1
+
+        left join (<!--会员总数(包含本人)-->
+        select
+        parent_id,
+        id,
+        count(distinct `会员broker_id`) as member_num
+        from manager_member_join_org_cache
+        group by parent_id, id) temp2 on temp1.parent_id = temp2.parent_id and temp1.id = temp2.id
+
+        left join (<!--新发展黄金会员数-->
+        select a.parent_id,
+        a.id,
+        count(distinct ba.id) as new_member_num
+        from (
+        select
+        parent_id,
+        id,
+        `会员经理broker_id` as broker_id,
+        count(1) as cnt
+        from manager_member_join_org_cache
+        group by parent_id, id, `会员经理broker_id`) a
+
+        inner join broker_join_approve_cache ba on a.broker_id = ba.recommender_id
+
+        inner join broker_member_level_cache bml on ba.id=bml.broker_id
+        where bml.broker_level in (2, 3, 4)
+        group by a.parent_id, a.id) temp3
+
+        on temp1.parent_id = temp3.parent_id
+        and temp1.id = temp3.id
+    </dw_depart_achievem_rep01>
+
+    <!--缓存推荐行为表-->
+    <client_building_relation_cache>
+        cache table client_building_relation_cache as
+        select
+        id,
+        broker_id,
+        member_level,
+        client_phone,
+        create_time
+        from hft.ods_hft_sqlserver_client_building_relation
+    </client_building_relation_cache>
+
+    <!--缓存成交行为表-->
+    <client_building_order_cache>
+        cache table client_building_order_cache as
+        select
+        id,
+        lifecycle_id,
+        subs_time,
+        turnover_amount
+        from hft.ods_hft_sqlserver_client_building_order
+    </client_building_order_cache>
+
+    <!--缓存推荐签约表-->
+    <client_building_sale_cache>
+        cache table client_building_sale_cache as
+        select
+        id,
+        lifecycle_id,
+        contract_time
+        from hft.ods_hft_sqlserver_client_building_sale
+    </client_building_sale_cache>
+
+    <!--缓存访问行为表-->
+    <client_building_visited_cache>
+        cache table client_building_visited_cache as
+        select
+        id,
+        lifecycle_id,
+        visited_time
+        from hft.ods_hft_sqlserver_client_building_visited
+        where unix_timestamp(visited_time, 'yyyy-MM-dd') >= unix_timestamp('2020-04-01', 'yyyy-MM-dd')
+    </client_building_visited_cache>
+
+    <!--部门业绩报表02-->
+    <dw_depart_achievem_rep02>
+        create table hft.dw_depart_achievem_rep02_spark as
+        select
+        temp1.parent_id,
+        temp1.id,
+        temp1.day_time,
+        temp1.new_member_rela,
+        nvl(temp2.new_member_dealnum, 0) as new_member_dealnum,
+        nvl(temp2.new_number_dealamo, 0) as new_number_dealamo,
+        nvl(temp3.member_dealnum, 0) as member_dealnum,
+        nvl(temp3.mumber_dealamo, 0) as mumber_dealamo
+        from
+        (select
+        b.parent_id,
+        b.id2 AS id,
+        substring(cbr.create_time,1,10) AS day_time,
+        count(DISTINCT cbr.id) AS new_member_rela
+        from client_building_relation_cache cbr
+        inner join
+        (select
+        a.parent_id,
+        a.id as id2,
+        ba.id
+        from
+        (select
+        parent_id,
+        id,
+        `会员经理broker_id` as broker_id
+        from manager_member_join_org_cache
+        group by parent_id, id, `会员经理broker_id`) a
+
+        inner join broker_join_approve_cache ba on a.broker_id = ba.recommender_id) b on b.id = cbr.broker_id
+        where cbr.member_level in (2, 3, 4)
+        and unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        group by b.parent_id, b.id2, substring(cbr.create_time, 1, 10)) temp1
+
+        left join
+
+        (select
+        f.parent_id,
+        f.id2 AS id,
+        substring(cbo.subs_time,1,10) AS day_time,
+        count(cbo.id) AS new_member_dealnum,
+        round((sum(cast(turnover_amount AS FLOAT))/10000),0) AS new_number_dealamo
+        from client_building_order_cache cbo
+        inner join client_building_relation_cache cbr on cbr.id = cbo.lifecycle_id
+        inner join
+        (select
+        a.parent_id,
+        a.id as id2,
+        ba.id
+        from (select
+        parent_id,
+        id,
+        `会员broker_id` AS broker_id
+        from manager_member_join_org_cache
+        group by parent_id, id, `会员broker_id`) a
+        inner join broker_join_approve_cache ba on a.broker_id = ba.recommender_id
+        ) f on upper(f.id) = upper(cbr.broker_id)
+        where unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        and unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        group by f.parent_id, f.id2, substring(cbo.subs_time,1,10)) temp2
+        on temp1.parent_id = temp2.parent_id
+        and temp1.id = temp2.id
+        and temp1.day_time = temp2.day_time
+
+        left join
+        (select
+        f.parent_id,
+        f.id,
+        substring(cbo.subs_time, 1, 10) as day_time,
+        count(cbo.id) as member_dealnum,
+        round((sum(cast(cbo.turnover_amount AS FLOAT))/10000),0) AS mumber_dealamo
+        from client_building_order_cache cbo
+        inner join client_building_relation_cache cbr on cbr.id = cbo.lifecycle_id
+        inner join
+        (select
+        parent_id,
+        id,
+        `会员broker_id`
+        from manager_member_join_org_cache
+        group by parent_id, id, `会员broker_id`) f on upper(f.`会员broker_id`) = upper(cbr.broker_id)
+        where unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        and unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        group by f.parent_id, f.id, substring(cbo.subs_time,1,10)) temp3
+        on temp1.parent_id = temp3.parent_id
+        and temp1.id = temp3.id
+        and temp1.day_time = temp3.day_time
+    </dw_depart_achievem_rep02>
+
+    <member_manager_achievem_rep>
+        create table hft.member_manager_achievem_rep_spark as
+        select
+        tmp.parent_id,
+        tmp.id,
+        tmp.member_manager_name,
+        tmp.member_broker_id,
+        tmp.sap,
+        tmp.team_member_num,
+        tmp.new_member_num,
+        tmp.new_member_rela,
+        tmp.avg_rela,
+        tmp.new_member_dealnum,
+        tmp.new_number_dealamo,
+        tmp.team_rela_num,
+        tmp.team_dealnum,
+        tmp.team_dealamo,
+        rank() over(ORDER BY tmp.new_member_rela/tmp.new_member_num DESC) AS avg_rela_rank,
+        rank() over(ORDER BY tmp.new_number_dealamo DESC) AS new_number_dealamo_rank,
+        rank() over(ORDER BY tmp.team_rela_num DESC) AS team_rela_rank,
+        rank() over(ORDER BY tmp.team_dealamo DESC) AS team_dealamo_rank
+        from
+        (
+        select
+        temp1.parent_id,
+        temp1.id,
+        temp1.`会员经理姓名` as member_manager_name,
+        temp1.`会员经理broker_id` as member_broker_id,
+        temp1.sap,
+        nvl(temp1.`团队会员总数`, 0) as team_member_num,
+        nvl(temp2.`新发展黄金会员总数`, 0) as new_member_num,
+        nvl(temp3.`新发展黄金会员推荐总量`, 0) as new_member_rela,
+        --这个不会出现为除数为0？
+        temp3.`新发展黄金会员推荐总量`/temp2.`新发展黄金会员总数` as avg_rela,
+        nvl(temp4.`新发展黄金会员成交套数`, 0) as new_member_dealnum,
+        nvl(temp4.`新发展黄金会员推荐成交总金额`, 0) as new_number_dealamo,
+        nvl(temp5.`团队推荐总量`, 0) as team_rela_num,
+        nvl(temp6.`团队推荐成交套数`, 0) as team_dealnum,
+        nvl(temp6.`团队推荐成交金额`, 0) as team_dealamo
+        from
+        (select
+        parent_id,
+        `地区公司`,
+        id,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        count(DISTINCT `会员经理发展的会员手机号码`) AS `团队会员总数`
+        from manager_member_join_org_cache
+        group by parent_id, `地区公司`, id, `会员经理所属部门`, `会员经理姓名`, `会员经理broker_id`, sap) temp1
+
+        left join
+        (select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.sap,
+        count(DISTINCT ba.id) AS `新发展黄金会员总数`
+        from
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `sap`,
+        `会员经理broker_id` AS broker_id
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`, `会员经理所属部门`, `会员经理姓名`, `sap`, `会员经理broker_id`) a
+        inner join broker_join_approve_cache ba on a.broker_id = ba.recommender_id
+        inner join broker_member_level_cache bml on ba.id = bml.broker_id
+        where bml.broker_level in (2, 3, 4)
+        group by a.`地区公司`, a.`会员经理所属部门`, a.`会员经理姓名`, a.sap) temp2
+        on temp1.sap = temp2.sap
+
+        left join
+        (
+        select
+        b.`地区公司`,
+        b.`会员经理所属部门`,
+        b.`会员经理姓名`,
+        b.sap,
+        count(DISTINCT cbr.id) AS `新发展黄金会员推荐总量`
+        from client_building_relation_cache cbr
+        inner join
+        (select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`sap`,
+        ba.id
+        from
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `sap`,
+        `会员经理broker_id` AS broker_id
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`, `会员经理所属部门`, `会员经理姓名`, `sap`, `会员经理broker_id`) a
+        inner join broker_join_approve_cache ba on a.broker_id = ba.recommender_id) b
+        on b.id = cbr.broker_id
+        where cbr.member_level in (2, 3, 4)
+        and unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        group by b.`地区公司`, b.`会员经理所属部门`, b.`会员经理姓名`, b.sap
+        ) temp3 on temp1.sap = temp3.sap
+
+        left join
+        (select
+        f.`地区公司`,
+        f.`会员经理所属部门`,
+        f.`会员经理姓名`,
+        f.sap,
+        count(cbo.id) AS `新发展黄金会员成交套数`,
+        round((sum(cast(turnover_amount AS FLOAT))/10000),0) AS `新发展黄金会员推荐成交总金额`
+        from client_building_order_cache cbo
+        inner join client_building_relation_cache cbr on cbr.id = cbo.lifecycle_id
+        inner join
+        (select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`sap`,
+        ba.id
+        from
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `sap`,
+        `会员经理broker_id` AS broker_id
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`, `会员经理所属部门`, `会员经理姓名`, `sap`, `会员经理broker_id`) a
+        inner join broker_join_approve_cache ba on a.broker_id = ba.recommender_id) f
+        on upper(f.id) = upper(cbr.broker_id)
+        where unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        and unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-29', 'yyyy-MM-dd')
+        and cbr.member_level in (2, 3, 4)
+        group by f.`地区公司`, f.`会员经理所属部门`, f.`会员经理姓名`, f.sap) temp4
+        on temp1.sap = temp4.sap
+
+        left join
+        (select
+        b.`地区公司`,
+        b.`会员经理所属部门`,
+        b.`会员经理姓名`,
+        b.sap,
+        count(DISTINCT cbr.id) AS `团队推荐总量`
+        from client_building_relation_cache cbr
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `sap`,
+        `会员经理broker_id` AS broker_id
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`, `会员经理所属部门`, `会员经理姓名`, `sap`, `会员经理broker_id`) b
+        on b.broker_id=cbr.broker_id
+        where unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-04-11', 'yyyy-MM-dd')
+        group by b.`地区公司`, b.`会员经理所属部门`, b.`会员经理姓名`, b.sap) temp5
+        on temp1.sap = temp5.sap
+
+        left join
+        (select
+        f.`地区公司`,
+        f.`会员经理所属部门`,
+        f.`会员经理姓名`,
+        f.sap,
+        count(cbo.id) AS `团队推荐成交套数`,
+        round((sum(cast(turnover_amount AS FLOAT))/10000),0) AS `团队推荐成交金额`
+        from client_building_order_cache cbo
+        inner join client_building_relation_cache cbr on cbr.id = cbo.lifecycle_id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `sap`,
+        `会员经理broker_id` AS broker_id
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`, `会员经理所属部门`, `会员经理姓名`, `sap`, `会员经理broker_id`) f
+        on upper(f.broker_id) = upper(cbr.broker_id)
+        where unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-21', 'yyyy-MM-dd')
+        and unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-03-21', 'yyyy-MM-dd')
+        group by f.`地区公司`, f.`会员经理所属部门`, f.`会员经理姓名`, f.sap) temp6
+        on temp1.sap = temp6.sap
+        ) tmp
+    </member_manager_achievem_rep>
+
+    <membg_assistant_rep_temp_cache>
+        cache table membg_assistant_rep_temp_cache as
+        select
+        d.`地区公司`,
+        d.`会员经理所属部门`,
+        d.`会员经理姓名`,
+        d.`会员经理broker_id`,
+        d.sap,
+        d.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbr.client_phone ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbr.client_phone ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbr.client_phone ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbr.client_phone) AS `累计`,
+        '1' AS lable
+        from
+        (select
+        *
+        from client_building_relation_cache
+        where unix_timestamp(create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-04-01', 'yyyy-MM-dd')
+        ) cbr
+        inner join broker_cache b on upper(b.id) = upper(cbr.broker_id)
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`) d on upper(b.id) = upper(d.`会员broker_id`)
+        where b.broker_type = '0'
+        group by d.`地区公司`,
+        d.`会员经理所属部门`,
+        d.`会员经理姓名`,
+        d.`会员经理broker_id`,
+        d.sap,
+        d.`higher_broker_id`
+
+        union all
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbv.visited_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbv.id ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbv.visited_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbv.id ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbv.visited_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbv.id ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbv.id) AS `累计`,
+        '2' AS lable
+        from
+        (select
+        id,
+        lifecycle_id,
+        visited_time
+        from client_building_visited_cache
+        where unix_timestamp(visited_time, 'yyyy-MM-dd') > unix_timestamp('2020-04-01', 'yyyy-MM-dd')
+        ) cbv
+        inner join
+        (select id,
+        broker_id
+        from client_building_relation_cache
+        ) cbr on cbr.id = cbv.lifecycle_id
+        inner join
+        (select
+        *
+        from broker_approve_cache
+        where approve_state='2'
+        ) d on cbr.broker_id = d.broker_id
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where nvl(m_qq, '0') &lt;&gt; '2' and broker_type = '0'
+        ) c on d.broker_id = c.id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) a on upper(a.`会员broker_id`) = upper(c.id)
+        group by a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`
+
+        union all
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbo.id ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbo.id ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbo.id ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbo.id) AS `累计`,
+        '3' AS lable
+        from
+        (select
+        *
+        from client_building_order_cache
+        where subs_time >= '2020-04-01'
+        ) cbo
+        inner join client_building_relation_cache cbr ON cbr.id = cbo.lifecycle_id
+        inner join
+        (select
+        *
+        from broker_approve_cache
+        where approve_state = '2'
+        ) d on cbr.broker_id=d.broker_id
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where nvl(m_qq, '0') &lt;&gt; '2' and broker_type = '0'
+        ) c on d.broker_id = c.id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) a ON upper(a.`会员broker_id`) = upper(c.id)
+        GROUP BY a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`
+
+        union all
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbs.contract_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbs.id ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbs.contract_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbs.id ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbs.contract_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbs.id ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbs.id) AS `累计`,
+        '4' AS lable
+        from
+        (SELECT *
+        FROM client_building_sale_cache
+        WHERE contract_time>='2020-04-01') cbs
+        INNER JOIN client_building_relation_cache cbr ON cbr.id = cbs.lifecycle_id
+        inner join
+        (select
+        *
+        from broker_approve_cache
+        where approve_state = '2'
+        ) d on cbr.broker_id=d.broker_id
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where nvl(m_qq, '0') &lt;&gt; '2' and broker_type = '0'
+        ) c on d.broker_id = c.id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) a ON upper(a.`会员broker_id`) = upper(c.id)
+        GROUP BY a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`
+
+        union all
+
+        select
+        d.`地区公司`,
+        d.`会员经理所属部门`,
+        d.`会员经理姓名`,
+        d.`会员经理broker_id`,
+        d.sap,
+        d.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbr.client_phone ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbr.client_phone ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbr.create_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbr.client_phone ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbr.client_phone) AS `累计`,
+        '5' AS lable
+        from
+        (select
+        *
+        from client_building_relation_cache
+        where unix_timestamp(create_time, 'yyyy-MM-dd') >= unix_timestamp('2020-04-01', 'yyyy-MM-dd')
+        ) cbr
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where broker_type = '0'
+        ) b on upper(b.id)=upper(cbr.broker_id)
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        where `是否合伙人` = 1
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) d ON upper(d.`会员broker_id`) = upper(b.id)
+        GROUP BY d.`地区公司`,
+        d.`会员经理所属部门`,
+        d.`会员经理姓名`,
+        d.`会员经理broker_id`,
+        d.sap,
+        d.`higher_broker_id`
+
+        union all
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbv.visited_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbv.id ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbv.visited_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbv.id ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbv.visited_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbv.id ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbv.id) AS `累计`,
+        '6' AS lable
+        from
+        (select
+        id,
+        lifecycle_id,
+        visited_time
+        from client_building_visited_cache
+        where unix_timestamp(visited_time, 'yyyy-MM-dd') > unix_timestamp('2020-04-01', 'yyyy-MM-dd')
+        ) cbv
+        inner join
+        (select id,
+        broker_id
+        from client_building_relation_cache
+        ) cbr on cbr.id = cbv.lifecycle_id
+        inner join
+        (select
+        *
+        from broker_approve_cache
+        where approve_state='2'
+        ) d on cbr.broker_id = d.broker_id
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where nvl(m_qq, '0') &lt;&gt; '2' and broker_type = '0'
+        ) c on d.broker_id = c.id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        where `是否合伙人` = 1
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) a on upper(a.`会员broker_id`) = upper(c.id)
+        group by a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`
+
+        union all
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbo.id ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbo.id ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbo.subs_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbo.id ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbo.id) AS `累计`,
+        '7' AS lable
+        from
+        (select
+        *
+        from client_building_order_cache
+        where subs_time >= '2020-04-01'
+        ) cbo
+        inner join client_building_relation_cache cbr ON cbr.id = cbo.lifecycle_id
+        inner join
+        (select
+        *
+        from broker_approve_cache
+        where approve_state = '2'
+        ) d on cbr.broker_id=d.broker_id
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where nvl(m_qq, '0') &lt;&gt; '2' and broker_type = '0'
+        ) c on d.broker_id = c.id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        where `是否合伙人` = 1
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) a ON upper(a.`会员broker_id`) = upper(c.id)
+        GROUP BY a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`
+
+        union all
+
+        select
+        a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbs.contract_time, 'yyyy-MM-dd') >= unix_timestamp() THEN cbs.id ELSE NULL END)) AS `今日`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbs.contract_time, 'yyyy-MM-dd') >= unix_timestamp(date_add(from_unixtime(unix_timestamp()),1 - CASE WHEN dayofweek(from_unixtime(unix_timestamp())) = 1 THEN 7 ELSE dayofweek(from_unixtime(unix_timestamp())) - 1 END), 'yyyy-MM-dd') THEN cbs.id ELSE NULL END)) AS `本周`,
+        count(DISTINCT (CASE WHEN unix_timestamp(cbs.contract_time, 'yyyy-MM-dd') >= unix_timestamp(trunc(from_unixtime(unix_timestamp(),'yyyy-MM-dd'),'MM')) THEN cbs.id ELSE NULL END)) AS `本月`,
+        count(DISTINCT cbs.id) AS `累计`,
+        '8' AS lable
+        from
+        (SELECT *
+        FROM client_building_sale_cache
+        WHERE contract_time>='2020-04-01') cbs
+        INNER JOIN client_building_relation_cache cbr ON cbr.id = cbs.lifecycle_id
+        inner join
+        (select
+        *
+        from broker_approve_cache
+        where approve_state = '2'
+        ) d on cbr.broker_id=d.broker_id
+        inner join
+        (select
+        id,
+        recommender_id
+        from broker_cache
+        where nvl(m_qq, '0') &lt;&gt; '2' and broker_type = '0'
+        ) c on d.broker_id = c.id
+        inner join
+        (select
+        `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        from dm_yx_basic_temp_manager_member_cache
+        where `是否合伙人` = 1
+        group by `地区公司`,
+        `会员经理所属部门`,
+        `会员经理姓名`,
+        `会员经理broker_id`,
+        sap,
+        `合伙人姓名`,
+        `higher_broker_id`,
+        `会员broker_id`
+        ) a ON upper(a.`会员broker_id`) = upper(c.id)
+        GROUP BY a.`地区公司`,
+        a.`会员经理所属部门`,
+        a.`会员经理姓名`,
+        a.`会员经理broker_id`,
+        a.sap,
+        a.`higher_broker_id`
+    </membg_assistant_rep_temp_cache>
+
+
+</main>
